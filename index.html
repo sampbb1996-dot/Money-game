@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title></title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #030303;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+  }
+  canvas {
+    display: block;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<script>
+/*
+  Constraint-first initiation game
+  - No targets
+  - No events
+  - No feedback
+  - One adaptive variable: reaction window
+*/
+
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+function resize() {
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+}
+addEventListener("resize", resize);
+resize();
+
+/* ---- FIELD STATE ---- */
+
+let noise = [];
+const NOISE_COUNT = 180;
+
+for (let i = 0; i < NOISE_COUNT; i++) {
+  noise.push({
+    x: Math.random(),
+    y: Math.random(),
+    a: Math.random(),
+    w: Math.random() * 2 + 0.5
+  });
+}
+
+/* ---- ADAPTIVE VARIABLE (hidden) ---- */
+
+let reactionWindow = 420; // ms
+const MIN_WINDOW = 120;
+const MAX_WINDOW = 700;
+
+let lastStimulus = performance.now();
+let armed = false;
+
+/* ---- DRAW LOOP ---- */
+
+function draw(t) {
+  ctx.fillStyle = "rgba(3,3,3,0.18)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let p of noise) {
+    p.a += (Math.random() - 0.5) * 0.002;
+    p.a = Math.max(0.01, Math.min(0.05, p.a));
+
+    ctx.strokeStyle = `rgba(240,240,240,${p.a})`;
+    ctx.lineWidth = p.w;
+
+    const x = p.x * canvas.width;
+    const y = p.y * canvas.height;
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(
+      x + Math.cos(t * 0.0001 + p.y) * 18,
+      y + Math.sin(t * 0.0001 + p.x) * 18
+    );
+    ctx.stroke();
+  }
+
+  /* implicit stimulus window (no visible event) */
+  if (!armed && t - lastStimulus > 1200 + Math.random() * 2000) {
+    armed = true;
+    lastStimulus = t;
+  }
+
+  requestAnimationFrame(draw);
+}
+
+requestAnimationFrame(draw);
+
+/* ---- INPUT (negative action) ---- */
+
+document.addEventListener("pointerup", () => {
+  const now = performance.now();
+
+  if (!armed) return;
+
+  const dt = now - lastStimulus;
+  armed = false;
+
+  /* silent adaptation */
+  if (dt <= reactionWindow) {
+    reactionWindow = Math.max(
+      MIN_WINDOW,
+      reactionWindow - 18
+    );
+  } else {
+    reactionWindow = Math.min(
+      MAX_WINDOW,
+      reactionWindow + 28
+    );
+  }
+});
+</script>
+</body>
+</html>
