@@ -14,23 +14,24 @@
     overflow: hidden;
     touch-action: manipulation;
   }
-  canvas {
-    display: block;
-  }
+  canvas { display: block; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 
 <script>
-/*
-  Constraint-first initiation game
-  - No targets
-  - No events
-  - No feedback
-  - One adaptive variable: reaction window
-*/
+/* ===============================
+   OWNER EXCLUSION (YOU)
+================================ */
+if (!localStorage.getItem("mg_owner")) {
+  localStorage.setItem("mg_owner", "true");
+}
+const IS_OWNER = localStorage.getItem("mg_owner") === "true";
 
+/* ===============================
+   CANVAS SETUP
+================================ */
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
@@ -41,36 +42,43 @@ function resize() {
 addEventListener("resize", resize);
 resize();
 
-/* ---- FIELD STATE ---- */
-
-let noise = [];
-const NOISE_COUNT = 180;
-
-for (let i = 0; i < NOISE_COUNT; i++) {
+/* ===============================
+   FIELD NOISE
+================================ */
+const noise = [];
+for (let i = 0; i < 180; i++) {
   noise.push({
     x: Math.random(),
     y: Math.random(),
-    a: Math.random(),
+    a: Math.random() * 0.04 + 0.01,
     w: Math.random() * 2 + 0.5
   });
 }
 
-/* ---- ADAPTIVE VARIABLE (hidden) ---- */
-
-let reactionWindow = 420; // ms
-const MIN_WINDOW = 120;
-const MAX_WINDOW = 700;
-
-let lastStimulus = performance.now();
+/* ===============================
+   GAME STATE
+================================ */
+let t = 0;
 let armed = false;
+let lastStimulus = performance.now();
+let reactionWindow = 420;
 
-/* ---- DRAW LOOP ---- */
+let counted = false;
 
-function draw(t) {
+/* ===============================
+   SHARED COUNTER (FREE)
+================================ */
+const COUNT_NS = "money-game";
+const COUNT_KEY = "players";
+
+/* ===============================
+   DRAW LOOP
+================================ */
+function draw(time) {
   ctx.fillStyle = "rgba(3,3,3,0.18)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  for (let p of noise) {
+  for (const p of noise) {
     p.a += (Math.random() - 0.5) * 0.002;
     p.a = Math.max(0.01, Math.min(0.05, p.a));
 
@@ -89,40 +97,70 @@ function draw(t) {
     ctx.stroke();
   }
 
-  /* implicit stimulus window (no visible event) */
-  if (!armed && t - lastStimulus > 1200 + Math.random() * 2000) {
+  if (!armed && time - lastStimulus > 1200 + Math.random() * 2000) {
     armed = true;
-    lastStimulus = t;
+    lastStimulus = time;
   }
 
+  drawCount();
+  t += 1;
   requestAnimationFrame(draw);
 }
-
 requestAnimationFrame(draw);
 
-/* ---- INPUT (negative action) ---- */
-
+/* ===============================
+   INPUT = OFFICIAL PARTICIPATION
+================================ */
 document.addEventListener("pointerup", () => {
   const now = performance.now();
 
-  if (!armed) return;
+  if (!counted && !IS_OWNER) {
+    counted = true;
+    fetch(`https://api.countapi.xyz/hit/${COUNT_NS}/${COUNT_KEY}`);
+  }
 
-  const dt = now - lastStimulus;
+  if (!armed) return;
   armed = false;
 
-  /* silent adaptation */
-  if (dt <= reactionWindow) {
-    reactionWindow = Math.max(
-      MIN_WINDOW,
-      reactionWindow - 18
-    );
-  } else {
-    reactionWindow = Math.min(
-      MAX_WINDOW,
-      reactionWindow + 28
-    );
+  const dt = now - lastStimulus;
+  reactionWindow += dt <= reactionWindow ? -18 : 28;
+  reactionWindow = Math.max(120, Math.min(700, reactionWindow));
+});
+
+/* ===============================
+   CLEANUP ON LEAVE
+================================ */
+window.addEventListener("beforeunload", () => {
+  if (counted && !IS_OWNER) {
+    fetch(`https://api.countapi.xyz/hit/${COUNT_NS}/${COUNT_KEY}?amount=-1`);
   }
 });
+
+/* ===============================
+   DISPLAY COUNT (SUBTLE)
+================================ */
+let lastFetch = 0;
+let currentCount = 0;
+
+async function drawCount() {
+  const now = performance.now();
+  if (now - lastFetch < 10000) return;
+  lastFetch = now;
+
+  try {
+    const res = await fetch(
+      `https://api.countapi.xyz/get/${COUNT_NS}/${COUNT_KEY}`
+    );
+    const data = await res.json();
+    currentCount = data.value || 0;
+  } catch {}
+
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  ctx.font = "12px system-ui";
+  ctx.fillText(`${currentCount} here`, 12, canvas.height - 12);
+  ctx.restore();
+}
 </script>
 </body>
 </html>
